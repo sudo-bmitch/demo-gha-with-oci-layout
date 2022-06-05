@@ -1,0 +1,7 @@
+cosign.key
+cosign.pub
+hello
+oci-layout
+oci-layout.tar
+sbom.json
+scan.json
