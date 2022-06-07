@@ -11,6 +11,8 @@ jobs:
   docker:
     name: Docker
     runs-on: ubuntu-latest
+    permissions:
+      id-token: 'write'
     steps:
       - name: Check out code
         uses: actions/checkout@v2
@@ -98,7 +100,7 @@ jobs:
       - name: SBOM
         uses: anchore/sbom-action@v0
         with:
-          artifact-name: "sbom.json"
+          output-file: "sbom.json"
           image: "oci-dir:oci-layout"
           format: "cyclonedx-json"
 
@@ -107,6 +109,40 @@ jobs:
         with:
           image: "oci-dir:oci-layout"
 
-      # TODO: start zot service
-      # TODO: sign
-      # TODO: registry login and push
+      - name: Attach artifacts to image
+        id: artifacts
+        run: |
+          sbom_digest=$(regctl artifact put \
+            --config-media-type application/vnd.oci.image.config.v1+json \
+            -f sbom.json \
+            --annotation org.opencontainers.artifact.type=sbom \
+            --annotation org.example.sbom.type=cyclonedx-json \
+            --format '{{ .Manifest.GetDescriptor.Digest }}' \
+            --refers ocidir://oci-layout:latest)
+          echo "::set-output name=sbom_digest::${sbom_digest}"
+
+      - name: zot
+        run: |
+          docker run --rm -d --name zot \
+            -p 127.0.0.1:5000:5000 \
+            -u "$(id -u):$(id -g)" \
+            -v "$(pwd)/oci-layout:/var/lib/registry/demo" \
+            ghcr.io/project-zot/zot-linux-amd64:v1.4.0
+          curl -s http://localhost:5000/v2/ -o /dev/null || sleep 2
+
+      - name: sign
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign sign "localhost:5000/demo:latest"
+          cosign sign "localhost:5000/demo@${{ steps.artifacts.outputs.sbom_digest }}"
+
+      - name: login and push
+        run: |
+          regctl registry login \
+            -u "${{ secrets.GHCR_USER }}" \
+            -p "${{ secrets.GHCR_TOKEN }}" \
+            ghcr.io
+          regctl image copy --digest-tags -v info \
+            ocidir://oci-layout:latest \
+            ghcr.io/sudo-bmitch/demo-gha-with-oci-layout:latest

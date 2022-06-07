@@ -58,7 +58,9 @@ regctl-setup: .FORCE
 	regctl registry set --tls=disabled localhost:5207
 
 zot: .FORCE
-	docker run --rm -d --name zot -p 127.0.0.1:5207:5000 \
+	docker run --rm -d --name zot \
+		-p 127.0.0.1:5207:5000 \
+		-u "$(shell id -u):$(shell id -g)" \
 	  -v "$(shell pwd)/oci-layout:/var/lib/registry/demo" \
 		zot:latest
 #	  ghcr.io/project-zot/zot-linux-amd64:v1.4.0
@@ -96,16 +98,20 @@ sign: cosign.key .FORCE
 	cosign sign --key cosign.key "localhost:5207/demo@$(shell regctl image digest ocidir://oci-layout)"
 
 attach: .FORCE
-	regctl artifact put ocidir://oci-layout:latest --refers \
+	regctl artifact put \
 	  --config-media-type application/vnd.oci.image.config.v1+json \
 		-f sbom.json \
 		--annotation org.opencontainers.artifact.type=sbom \
-		--annotation org.example.sbom.type=cyclonedx-json
-	regctl artifact put ocidir://oci-layout:latest --refers \
+		--annotation org.example.sbom.type=cyclonedx-json \
+    --format '{{ printf "%s\n" .Manifest.GetDescriptor.Digest }}' \
+		--refers ocidir://oci-layout:latest
+	regctl artifact put \
 	  --config-media-type application/vnd.oci.image.config.v1+json \
 		-f scan.json \
 		--annotation org.opencontainers.artifact.type=scan \
-		--annotation org.example.scan.type=grype-json
+		--annotation org.example.scan.type=grype-json \
+    --format '{{ printf "%s\n" .Manifest.GetDescriptor.Digest }}' \
+		--refers ocidir://oci-layout:latest
 
 push: .FORCE
 	regctl image copy -v info --referrers ocidir://oci-layout localhost:5000/demo:latest
