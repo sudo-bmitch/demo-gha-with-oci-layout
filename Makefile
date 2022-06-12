@@ -94,9 +94,6 @@ scan-trivy: .FORCE
 cosign.*:
 	cosign generate-key-pair
 
-sign: cosign.key .FORCE
-	cosign sign --key cosign.key "localhost:5207/demo@$(shell regctl image digest ocidir://oci-layout)"
-
 attach: .FORCE
 	regctl artifact put \
 	  --config-media-type application/vnd.oci.image.config.v1+json \
@@ -113,5 +110,9 @@ attach: .FORCE
     --format '{{ printf "%s\n" .Manifest.GetDescriptor.Digest }}' \
 		--refers ocidir://oci-layout:latest
 
+sign: cosign.key .FORCE
+	cosign sign --key cosign.key "localhost:5207/demo@$(shell regctl image digest ocidir://oci-layout)"
+
 push: .FORCE
-	regctl image copy -v info --referrers ocidir://oci-layout localhost:5000/demo:latest
+	regctl image copy -v info --referrers --digest-tags \
+	  ocidir://oci-layout localhost:5000/demo:latest
