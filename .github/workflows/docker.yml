@@ -114,7 +114,7 @@ jobs:
         run: |
           sbom_digest=$(regctl artifact put \
             --config-media-type application/vnd.oci.image.config.v1+json \
-            -f sbom.json \
+            -f sbom.json --media-type "application/vnd.cyclonedx+json" \
             --annotation org.opencontainers.artifact.type=sbom \
             --annotation org.example.sbom.type=cyclonedx-json \
             --format '{{ .Manifest.GetDescriptor.Digest }}' \
@@ -145,4 +145,4 @@ jobs:
             ghcr.io
           regctl image copy --digest-tags -v info \
             ocidir://oci-layout:latest \
-            ghcr.io/sudo-bmitch/demo-gha-with-oci-layout:latest
+            ghcr.io/sudo-bmitch/demo-gha-with-oci-layout:${{ steps.prep.outputs.version }}

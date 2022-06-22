@@ -13,7 +13,7 @@ date_git:=$(shell date -d "@$(shell git log -1 --format=%at)" +%Y-%m-%dT%H:%M:%S
 
 .FORCE:
 
-all: fmt vet test lint hello
+all: fmt vet test lint hello docker oci-layout regctl-setup zot mutate sbom-syft scan-grype attach sign push
 
 clean:
 	-docker stop zot
@@ -49,7 +49,7 @@ hello: .FORCE
 docker: .FORCE
 	docker buildx build --platform="$(PLATFORMS)" \
 		--build-arg date_git="$(date_git)" \
-	  --output type=oci,dest=oci-layout.tar .
+	  --output type=oci,dest=oci-layout.tar,name=demo:latest .
 
 oci-layout: oci-layout.tar .FORCE
 	regctl image import ocidir://oci-layout oci-layout.tar
@@ -76,6 +76,9 @@ mutate: .FORCE
 sbom-syft: .FORCE
 	syft packages oci-dir:oci-layout -o cyclonedx-json --file sbom.json
 
+sbom-syft-spdx: .FORCE
+	syft packages oci-dir:oci-layout -o spdx-json --file sbom.json
+
 sbom-trivy: .FORCE
 	trivy sbom --sbom-format cyclonedx --artifact-type fs --output sbom.json .
 
@@ -97,14 +100,14 @@ cosign.*:
 attach: .FORCE
 	regctl artifact put \
 	  --config-media-type application/vnd.oci.image.config.v1+json \
-		-f sbom.json \
+		-f sbom.json --media-type "application/vnd.cyclonedx+json" \
 		--annotation org.opencontainers.artifact.type=sbom \
 		--annotation org.example.sbom.type=cyclonedx-json \
     --format '{{ printf "%s\n" .Manifest.GetDescriptor.Digest }}' \
 		--refers ocidir://oci-layout:latest
 	regctl artifact put \
 	  --config-media-type application/vnd.oci.image.config.v1+json \
-		-f scan.json \
+		-f scan.json --media-type "application/json" \
 		--annotation org.opencontainers.artifact.type=scan \
 		--annotation org.example.scan.type=grype-json \
     --format '{{ printf "%s\n" .Manifest.GetDescriptor.Digest }}' \
@@ -116,3 +119,17 @@ sign: cosign.key .FORCE
 push: .FORCE
 	regctl image copy -v info --referrers --digest-tags \
 	  ocidir://oci-layout localhost:5000/demo:latest
+
+run: .FORCE
+	docker pull localhost:5000/demo:latest
+	docker run --rm localhost:5000/demo:latest hello world
+
+inspect-list: .FORCE
+	regctl artifact list --force-get localhost:5000/demo:latest
+
+inspect-json: .FORCE
+	for dig in $$(regctl artifact list localhost:5000/demo:latest --format '{{range $$i, $$d := .Descriptors}}{{println $$d.Digest}}{{end}}'); do \
+		echo "Digest: $$dig"; \
+		regctl artifact get localhost:5000/demo@$$dig | head -20; \
+		echo "..."; echo; \
+	done
